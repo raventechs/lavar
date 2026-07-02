@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <!--
-  lavAR v2.1
+  lavAR v2.2
   Fecha: 2026-07-02
   Cambios: Animación auto con agua en header, features plus via flags Firestore
            (limiteSucursales, fidelizacion, gastos, personal), cierre de caja + WhatsApp,
@@ -522,6 +522,20 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db   = firebase.firestore();
 
+  // LOG DE ERRORES — P5 ROBUSTEZ
+  function logError(origen, mensaje, extra) {
+    try {
+      var uid = auth.currentUser ? auth.currentUser.uid : 'anonimo';
+      db.collection('errores').add({
+        app: 'lavAR', origen: origen,
+        mensaje: String(mensaje),
+        extra: extra ? String(extra) : null,
+        uid: uid,
+        ts: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch(_) {}
+  }
+
 // =============================================
 //  STATE
 // =============================================
@@ -529,7 +543,7 @@ let currentUser      = null;
 let currentRole      = 'owner';
 let currentSucId     = null;
 let currentSucNombre = '';
-let adminPin         = '1990';
+let adminPin         = '2580';
 let umbralFidel      = 10;
 let limiteSucursales = 1;
 let features         = { fidelizacion: false, gastos: false, personal: false };
@@ -1162,6 +1176,12 @@ function showToast(msg, type='info') {
   document.getElementById('toastContainer').appendChild(t);
   setTimeout(() => t.remove(), 3500);
 }
+
+  // SERVICE WORKER — P3 ROBUSTEZ
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/lavar/sw-lavar.js')
+      .catch(function(e){ logError('sw', e); });
+  }
 </script>
 </body>
 </html>
