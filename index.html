@@ -1,10 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<!--
-  lavAR v2.2 - Versión corregida (Login + Historial)
-  Fecha: 2026-07-04
--->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>lavAR — Sistema de Lavadero</title>
@@ -13,182 +9,93 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 <style>
 :root {
-  --bg:#0f1117; --bg2:#181c25; --bg3:#1e2330; --card:#232839;
-  --accent:#3b9eff; --accent2:#1a6fd4; --success:#22c55e;
-  --warning:#f59e0b; --danger:#ef4444; --text:#e8eaf0; --text2:#9ba3b8;
-  --border:#2d3348; --radius:12px; --radius-sm:8px;
+  --bg:#0f1117; --bg2:#181c25; --card:#232839;
+  --accent:#3b9eff; --text:#e8eaf0;
 }
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
-#loadingScreen{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity .4s;}
-#loadingScreen.hidden{opacity:0;pointer-events:none;}
-.login-card{background:var(--card);border-radius:var(--radius);padding:36px 28px;width:100%;max-width:380px;border:1px solid var(--border);}
-.btn{padding:11px 18px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-weight:600;}
-.btn-primary{background:var(--accent);color:#fff;width:100%;}
-.card{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);padding:18px;margin-bottom:14px;}
-.table-wrap{overflow-x:auto;}
-.toast{position:fixed;bottom:20px;right:20px;background:var(--card);color:var(--text);padding:12px 20px;border-radius:8px;z-index:9999;border-left:4px solid var(--accent);}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);margin:0;}
+.card{background:var(--card);padding:20px;margin:16px;border-radius:12px;}
+.btn{background:var(--accent);color:white;padding:12px;border:none;border-radius:8px;width:100%;}
 </style>
 </head>
 <body>
 
-<!-- LOADING -->
-<div id="loadingScreen">
-  <div class="car-scene" id="loadingCar"></div>
-  <div style="font-size:28px;font-weight:800;color:var(--accent);">lavAR</div>
+<div id="loadingScreen" style="position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;">
+  <div style="font-size:60px;margin-bottom:20px;">🚗</div>
+  <div style="font-size:28px;color:var(--accent);">lavAR</div>
 </div>
 
-<!-- LOGIN -->
-<div id="loginScreen" style="display:none;align-items:center;justify-content:center;min-height:100vh;padding:24px;">
-  <div class="login-card">
-    <h1 style="text-align:center;color:var(--accent);">lavAR 🚗</h1>
-    <div style="margin:16px 0;">
-      <input type="email" id="loginEmail" placeholder="tu@email.com" style="width:100%;padding:12px;margin-bottom:12px;"/>
-      <input type="password" id="loginPass" placeholder="••••••••" style="width:100%;padding:12px;"/>
-    </div>
-    <button class="btn btn-primary" onclick="doLogin()">Ingresar</button>
-    <button class="btn" onclick="doLoginGoogle()" style="background:white;color:#333;margin-top:12px;width:100%;">Google</button>
+<div id="loginScreen" style="display:none;padding:20px;">
+  <div class="card">
+    <h1 style="text-align:center;color:var(--accent);">lavAR</h1>
+    <input id="loginEmail" type="email" placeholder="Email" style="width:100%;padding:12px;margin:10px 0;"/>
+    <input id="loginPass" type="password" placeholder="Contraseña" style="width:100%;padding:12px;margin:10px 0;"/>
+    <button class="btn" onclick="doLogin()">Ingresar</button>
+    <button class="btn" onclick="doLoginGoogle()" style="background:white;color:black;margin-top:10px;">Google</button>
   </div>
 </div>
 
-<!-- APP -->
-<div id="appShell" style="display:none;flex-direction:column;min-height:100vh;">
-  <header style="background:var(--bg2);padding:12px;display:flex;justify-content:space-between;">
-    <div style="color:var(--accent);font-weight:800;">lavAR</div>
-    <button onclick="doLogout()">Salir</button>
-  </header>
-
-  <main style="padding:16px;">
-    <!-- Historial -->
-    <div class="card">
-      <h3>📋 Historial</h3>
-      <div style="display:flex;gap:10px;margin:12px 0;">
-        <input type="date" id="filtroDesde"/>
-        <input type="date" id="filtroHasta"/>
-      </div>
-      <button class="btn btn-primary" onclick="filtrarHistorial()">🔍 Ver Historial</button>
-      <div class="table-wrap" style="margin-top:16px;">
-        <table style="width:100%;">
-          <tbody id="historialBody"></tbody>
-        </table>
-      </div>
-    </div>
-  </main>
+<div id="appShell" style="display:none;">
+  <div class="card">
+    <h2>Historial</h2>
+    <button class="btn" onclick="filtrarHistorial()">Cargar Historial</button>
+    <div id="historialBody" style="margin-top:20px;"></div>
+  </div>
 </div>
 
-<div id="toastContainer"></div>
-
 <script>
-// FIREBASE
-const firebaseConfig = {
+// Config Firebase
+firebase.initializeApp({
   apiKey: "AIzaSyDVcK9reiQuC6YUpX16DMjyYhtYiH40hbc",
   authDomain: "lavar-b8b84.firebaseapp.com",
-  projectId: "lavar-b8b84",
-  storageBucket: "lavar-b8b84.firebasestorage.app",
-  messagingSenderId: "1064006581602",
-  appId: "1:1064006581602:web:fb5f0eea1dcff93d7a003b"
-};
-firebase.initializeApp(firebaseConfig);
+  projectId: "lavar-b8b84"
+});
 const auth = firebase.auth();
 const db = firebase.firestore();
 
 let currentUser = null;
 let currentSucId = null;
-let authInitialized = false;
 
-// INIT
-window.addEventListener('DOMContentLoaded', () => {
-  auth.onAuthStateChanged(async (user) => {
-    if (authInitialized) return;
-    authInitialized = true;
-
+window.addEventListener('load', () => {
+  auth.onAuthStateChanged(user => {
     if (user) {
       currentUser = user;
-      // Carga sucursal (ajusta según tu estructura)
-      try {
-        const snap = await db.collection('sucursales').where('ownerUid','==',user.uid).limit(1).get();
-        if (!snap.empty) currentSucId = snap.docs[0].id;
-      } catch(e){}
-      document.getElementById('appShell').style.display = 'flex';
-      hideLoading();
+      document.getElementById('appShell').style.display = 'block';
+      document.getElementById('loadingScreen').style.display = 'none';
     } else {
-      document.getElementById('loginScreen').style.display = 'flex';
-      hideLoading();
+      document.getElementById('loginScreen').style.display = 'block';
+      document.getElementById('loadingScreen').style.display = 'none';
     }
   });
 });
 
-function hideLoading() {
-  document.getElementById('loadingScreen').classList.add('hidden');
-}
-
 async function doLogin() {
   const email = document.getElementById('loginEmail').value.trim();
   const pass = document.getElementById('loginPass').value;
-  if (!email || !pass) return showToast("Completá email y contraseña");
-  try {
-    await auth.signInWithEmailAndPassword(email, pass);
-  } catch(e) {
-    showToast("Error: " + e.message);
-  }
+  if (!email || !pass) return alert("Completá los datos");
+  try { await auth.signInWithEmailAndPassword(email, pass); } 
+  catch(e) { alert(e.message); }
 }
 
 async function doLoginGoogle() {
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
     await auth.signInWithPopup(provider);
-  } catch(e) {
-    showToast("Error Google: " + e.message);
-  }
+  } catch(e) { alert(e.message); }
 }
 
-function doLogout() {
-  auth.signOut().then(() => location.reload());
-}
-
-// HISTORIAL - Versión simplificada
 async function filtrarHistorial() {
-  if (!currentSucId) return showToast("No hay sucursal activa");
-  const desde = document.getElementById('filtroDesde').value || new Date().toISOString().split('T')[0];
-  const hasta = document.getElementById('filtroHasta').value || desde;
-
+  if (!currentUser) return;
   try {
-    const snap = await db.collection('ventas')
-      .where('sucursalId', '==', currentSucId)
-      .where('fechaStr', '>=', desde)
-      .where('fechaStr', '<=', hasta)
-      .orderBy('fecha', 'desc')
-      .get();
-
+    const snap = await db.collection('ventas').limit(20).get();
     let html = '';
-    if (snap.empty) {
-      html = '<tr><td colspan="5" style="text-align:center;padding:40px;">Sin ventas en el período</td></tr>';
-    } else {
-      snap.forEach(doc => {
-        const v = doc.data();
-        html += `<tr>
-          <td>${v.fechaStr || ''}</td>
-          <td>${v.servicio || ''}</td>
-          <td>${v.patente || ''}</td>
-          <td>${v.metodo || ''}</td>
-          <td>$${v.precio || 0}</td>
-        </tr>`;
-      });
-    }
-    document.getElementById('historialBody').innerHTML = html;
-    showToast(`Mostrando ${snap.size} ventas`);
+    snap.forEach(doc => {
+      const v = doc.data();
+      html += `<p>${v.fechaStr || ''} - ${v.servicio || ''} - $${v.precio}</p>`;
+    });
+    document.getElementById('historialBody').innerHTML = html || '<p>Sin datos</p>';
   } catch(e) {
-    console.error(e);
-    showToast("Error de índice. Esperá unos minutos y probá de nuevo.");
+    alert("Error: " + e.message);
   }
-}
-
-function showToast(msg) {
-  const t = document.createElement('div');
-  t.className = 'toast';
-  t.textContent = msg;
-  document.getElementById('toastContainer').appendChild(t);
-  setTimeout(() => t.remove(), 4000);
 }
 </script>
 </body>
