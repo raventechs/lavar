@@ -628,6 +628,15 @@ window.addEventListener('DOMContentLoaded', () => {
   }, 8000);
 });
 
+  // Anti-colgado
+  setTimeout(() => {
+    if (document.getElementById('loadingScreen').style.display !== 'none') {
+      hideLoading();
+      showLogin();
+    }
+  }, 8000);
+});
+
 async function initEmpleado(codeSuc) {
   try {
     const snap = await db.collection('lavArLinks').doc(codeSuc).get();
@@ -852,7 +861,7 @@ async function filtrarHistorial() {
       .where('sucursalId','==',currentSucId)
       .where('fechaStr','>=',desde)
       .where('fechaStr','<=',hasta)
-      .orderBy('fecha','desc')
+      .orderBy('fechaStr','desc')   // ← Cambiado aquí
       .get();
     const ventas = snap.docs.map(d => ({id:d.id,...d.data()}));
     const tbody  = document.getElementById('historialBody');
@@ -871,7 +880,7 @@ async function filtrarHistorial() {
     window._historialData = ventas;
   } catch(e) { 
     console.error(e);
-    showToast('Error de índice. Verificá que el índice esté creado en Firebase.', 'danger'); 
+    showToast('Error al cargar historial: ' + e.message, 'danger'); 
   }
 }
 
