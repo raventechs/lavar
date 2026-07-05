@@ -417,6 +417,16 @@ tr:hover td{background:var(--bg3);}
         <button class="btn btn-primary btn-sm" onclick="guardarConfig()">💾 Guardar</button>
       </div>
       <div class="card">
+        <div class="card-title">💾 Backup de datos</div>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:12px;">Genera un archivo JSON con todos tus datos. Se descarga automáticamente una vez por día al abrir la app.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <button class="btn btn-primary btn-sm" onclick="generarBackup()">📥 Descargar backup ahora</button>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('inputRestaurar').click()">📤 Restaurar backup</button>
+        </div>
+        <input type="file" id="inputRestaurar" accept=".json" style="display:none;" onchange="restaurarBackup(this)">
+        <p style="font-size:11px;color:var(--text2);">Último backup: <span id="ultimoBackupFecha">—</span></p>
+      </div>
+      <div class="card">
         <div class="card-title">👤 Mi cuenta</div>
         <p style="font-size:13px;color:var(--text2);margin-bottom:12px;" id="cfgEmail">—</p>
         <button class="btn btn-danger btn-sm" onclick="doLogout()">Cerrar sesión</button>
@@ -646,7 +656,7 @@ async function initEmpleado(codeSuc) {
     currentSucId = d.sucursalId; currentSucNombre = d.nombre;
     await auth.signInAnonymously();
     currentUser = auth.currentUser; currentRole = 'employee';
-    hideLoading(); initUI(); initOffline();
+    hideLoading(); initUI(); initOffline(); chequearBackupDiario();
   } catch(e) { hideLoading(); showToast('Error: ' + e.message, 'danger'); }
 }
 
@@ -1241,6 +1251,8 @@ function abrirIDB() {
       var d = e.target.result;
       if (!d.objectStoreNames.contains('ventas_pendientes'))
         d.createObjectStore('ventas_pendientes', { keyPath: 'localId', autoIncrement: true });
+      if (!d.objectStoreNames.contains('backup_store'))
+        d.createObjectStore('backup_store', { keyPath: 'id' });
     };
     req.onsuccess = function(e) { idb = e.target.result; res(idb); };
     req.onerror = function(e) { rej(e); };
@@ -1321,6 +1333,142 @@ function initOffline() {
     actualizarEstadoConexion(navigator.onLine);
     actualizarBadge();
   }).catch(function(e) { console.error('IDB error:', e); });
+}
+
+
+// ══════════ BACKUP ESTÁNDAR lavAR ══════════
+var IDB_BACKUP_STORE = 'backup_store';
+
+function idbPutBackup(datos) {
+  return new Promise(function(res, rej) {
+    var req = indexedDB.open('lavar-offline', 1);
+    req.onsuccess = function(e) {
+      var db2 = e.target.result;
+      if (!db2.objectStoreNames.contains(IDB_BACKUP_STORE)) { res(); return; }
+      var tx = db2.transaction(IDB_BACKUP_STORE, 'readwrite');
+      tx.objectStore(IDB_BACKUP_STORE).put({ id: 'ultimo', datos: datos, fecha: new Date().toISOString() });
+      tx.oncomplete = function() { res(); };
+      tx.onerror = function(e) { rej(e); };
+    };
+    req.onerror = function(e) { rej(e); };
+  });
+}
+
+async function generarBackup(silencioso) {
+  var uid = currentUser ? currentUser.uid : null;
+  if (!uid) return;
+
+  try {
+    // Recopilar todos los datos
+    var [ventasSnap, sucursalesSnap, fidelSnap, configSnap] = await Promise.all([
+      db.collection('ventas').where('uid', '==', uid).get().catch(function(){return {docs:[]};}),
+      db.collection('sucursales').where('uid', '==', uid).get().catch(function(){return {docs:[]};}),
+      db.collection('fidelizacion').where('uid', '==', uid).get().catch(function(){return {docs:[]};}),
+      db.collection('configuracion').doc(uid).get().catch(function(){return {exists:false};})
+    ]);
+
+    var backup = {
+      app: 'lavAR',
+      version: '2.3',
+      fecha: new Date().toISOString(),
+      uid: uid,
+      ventas: ventasSnap.docs.map(function(d){ return Object.assign({_id: d.id}, d.data()); }),
+      sucursales: sucursalesSnap.docs.map(function(d){ return Object.assign({_id: d.id}, d.data()); }),
+      fidelizacion: fidelSnap.docs.map(function(d){ return Object.assign({_id: d.id}, d.data()); }),
+      configuracion: configSnap.exists ? configSnap.data() : {}
+    };
+
+    var json = JSON.stringify(backup, null, 2);
+    var fecha = new Date().toISOString().slice(0, 10);
+
+    // Guardar en IndexedDB
+    await idbPutBackup(json).catch(function(){});
+
+    // Marcar fecha en localStorage
+    localStorage.setItem('lavar-ultimo-backup', fecha);
+    var el = document.getElementById('ultimoBackupFecha');
+    if (el) el.textContent = fecha;
+
+    if (!silencioso) {
+      // Descargar archivo
+      var blob = new Blob([json], { type: 'application/json' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'lavar-backup-' + fecha + '.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('✅ Backup descargado');
+    }
+  } catch(e) {
+    console.error('Error backup:', e);
+    if (!silencioso) showToast('Error al generar backup', 'danger');
+  }
+}
+
+async function restaurarBackup(input) {
+  var file = input.files[0];
+  if (!file) return;
+  var uid = currentUser ? currentUser.uid : null;
+  if (!uid) { showToast('Iniciá sesión primero', 'danger'); return; }
+
+  if (!confirm('Esto va a REEMPLAZAR todos tus datos actuales con los del backup. ¿Continuar?')) {
+    input.value = ''; return;
+  }
+
+  try {
+    var text = await file.text();
+    var backup = JSON.parse(text);
+
+    if (backup.app !== 'lavAR') { showToast('El archivo no es un backup de lavAR', 'danger'); return; }
+
+    showToast('Restaurando datos...');
+    var batch = db.batch();
+    var count = 0;
+
+    // Restaurar ventas
+    (backup.ventas || []).forEach(function(v) {
+      var id = v._id; var data = Object.assign({}, v); delete data._id;
+      batch.set(db.collection('ventas').doc(id), data);
+      if (++count % 400 === 0) { batch.commit(); batch = db.batch(); }
+    });
+
+    // Restaurar sucursales
+    (backup.sucursales || []).forEach(function(s) {
+      var id = s._id; var data = Object.assign({}, s); delete data._id;
+      batch.set(db.collection('sucursales').doc(id), data);
+    });
+
+    // Restaurar fidelización
+    (backup.fidelizacion || []).forEach(function(f) {
+      var id = f._id; var data = Object.assign({}, f); delete data._id;
+      batch.set(db.collection('fidelizacion').doc(id), data);
+    });
+
+    // Restaurar configuración
+    if (backup.configuracion && Object.keys(backup.configuracion).length > 0) {
+      batch.set(db.collection('configuracion').doc(uid), backup.configuracion, { merge: true });
+    }
+
+    await batch.commit();
+    showToast('✅ Backup restaurado correctamente');
+    input.value = '';
+    setTimeout(function() { location.reload(); }, 1500);
+  } catch(e) {
+    showToast('Error al restaurar: ' + e.message, 'danger');
+    input.value = '';
+  }
+}
+
+function chequearBackupDiario() {
+  var hoy = new Date().toISOString().slice(0, 10);
+  var ultimo = localStorage.getItem('lavar-ultimo-backup');
+  var el = document.getElementById('ultimoBackupFecha');
+  if (el && ultimo) el.textContent = ultimo;
+  if (ultimo !== hoy) {
+    // Esperar 5 segundos para no interferir con la carga inicial
+    setTimeout(function() { generarBackup(true); }, 5000);
+  }
 }
 
 </script>
