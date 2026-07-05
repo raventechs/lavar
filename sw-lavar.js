@@ -1,13 +1,13 @@
-// sw-lavar.js — Service Worker lavAR v2.2
-// P3 ROBUSTEZ: Caja + Historial offline
+// sw-lavar.js — Service Worker lavAR v2.3
+// P3 ROBUSTEZ: cache-first para shell, offline completo
 
-const CACHE_NAME = 'lavar-v2.2';
+const CACHE_NAME = 'lavar-v2.3';
 const SHELL = [
   '/lavar/',
   '/lavar/index.html',
-  'https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js',
-  'https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js',
-  'https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
 ];
 
 self.addEventListener('install', e => {
@@ -39,7 +39,8 @@ self.addEventListener('fetch', e => {
             (url.origin === self.location.origin ||
              url.hostname.includes('googleapis.com') ||
              url.hostname.includes('gstatic.com'))) {
-          caches.open(CACHE_NAME).then(c => c.put(e.request, response.clone()));
+          const clon = response.clone();
+          caches.open(CACHE_NAME).then(c => c.put(e.request, clon));
         }
         return response;
       }).catch(() => {
