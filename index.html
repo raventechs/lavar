@@ -600,6 +600,13 @@ let authInitialized = false;
 window.addEventListener('DOMContentLoaded', () => {
   buildCarScene('loadingCar', 1.2);
 
+  // Capturar resultado del redirect de Google
+  auth.getRedirectResult().catch(e => {
+    if (e.code && e.code !== 'auth/no-auth-event') {
+      showToast('Error Google: ' + e.message, 'danger');
+    }
+  });
+
   auth.onAuthStateChanged(async (user) => {
     if (authInitialized) return;
     authInitialized = true;
@@ -708,7 +715,7 @@ async function doLogin() {
 async function doLoginGoogle() {
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
-    await auth.signInWithPopup(provider);
+    await auth.signInWithRedirect(provider);
   } catch(e) { showToast('Error Google: ' + e.message, 'danger'); }
 }
 
