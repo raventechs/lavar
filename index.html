@@ -628,14 +628,6 @@ window.addEventListener('DOMContentLoaded', () => {
   }, 8000);
 });
 
-  // Anti-colgado
-  setTimeout(() => {
-    if (document.getElementById('loadingScreen').style.display !== 'none') {
-      hideLoading();
-      showLogin();
-    }
-  }, 8000);
-});
 
 async function initEmpleado(codeSuc) {
   try {
