@@ -613,15 +613,11 @@ let authInitialized = false;
 window.addEventListener('DOMContentLoaded', () => {
   buildCarScene('loadingCar', 1.2);
 
-  // Capturar resultado del redirect de Google
-  auth.getRedirectResult().catch(e => {
-    if (e.code && e.code !== 'auth/no-auth-event') {
-      showToast('Error Google: ' + e.message, 'danger');
-    }
-  });
+
 
   auth.onAuthStateChanged(async (user) => {
-    if (authInitialized) return;
+    // Solo ignorar si ya está la UI montada (evitar doble init)
+    if (authInitialized && document.getElementById('appShell').classList.contains('active')) return;
     authInitialized = true;
 
     const params = new URLSearchParams(window.location.search);
@@ -728,8 +724,9 @@ async function doLogin() {
 async function doLoginGoogle() {
   try {
     const provider = new firebase.auth.GoogleAuthProvider();
-    await auth.signInWithRedirect(provider);
-  } catch(e) { showToast('Error Google: ' + e.message, 'danger'); }
+    await auth.signInWithPopup(provider);
+    window.location.reload();
+  } catch(e) { showToast('Error al iniciar sesión: ' + e.message, 'danger'); }
 }
 
 async function showRegister() {
@@ -1219,10 +1216,17 @@ async function guardarAdmin() {
 // =============================================
 //  HELPERS UI
 // =============================================
-function showLogin() { document.getElementById('loginScreen').classList.add('active'); }
+function showLogin() {
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('appShell').classList.remove('active');
+  document.getElementById('appShell').style.display = 'none';
+  document.getElementById('loginScreen').classList.add('active');
+  window.scrollTo(0, 0);
+}
 function hideLoading() {
   const s = document.getElementById('loadingScreen');
-  s.classList.add('hidden'); setTimeout(() => s.style.display='none', 450);
+  s.classList.add('hidden');
+  s.style.display = 'none';
 }
 function openModal(id)  { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
