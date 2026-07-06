@@ -181,6 +181,11 @@ tr:hover td{background:var(--bg3);}
   padding:2px 7px;border-radius:20px;margin-left:6px;}
 
 .section-hidden{display:none!important;}
+
+/* ── ADMIN VIEW BANNER ── */
+#adminViewBanner{display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#f0b84a;color:#111;font-size:0.78rem;font-weight:700;padding:7px 16px;text-align:center;letter-spacing:.02em}
+#adminViewBanner.on{display:block}
+body.admin-view-active{padding-top:34px}
 </style>
 </head>
 <body>
@@ -519,6 +524,31 @@ tr:hover td{background:var(--bg3);}
 
 <div id="toastContainer"></div>
 
+
+// ═══════════════════════════════════
+//  ADMIN VIEW — carga datos de otro uid si ?adminView=1&uid=X
+// ═══════════════════════════════════
+var _adminViewUid = null;
+(function() {
+  var params = new URLSearchParams(window.location.search);
+  if (params.get('adminView') === '1' && params.get('uid')) {
+    _adminViewUid = params.get('uid');
+  }
+})();
+
+function activarAdminViewBanner() {
+  if (!_adminViewUid) return;
+  var banner = document.getElementById('adminViewBanner');
+  var uidSpan = document.getElementById('adminViewUid');
+  if (banner) { banner.classList.add('on'); document.body.classList.add('admin-view-active'); }
+  if (uidSpan) uidSpan.textContent = _adminViewUid;
+}
+
+function salirAdminView() {
+  window.location.href = window.location.origin + window.location.pathname;
+}
+window.salirAdminView = salirAdminView;
+
 <script>
 // =============================================
 //  FIREBASE CONFIG — lavar-b8b84
@@ -630,6 +660,10 @@ window.addEventListener('DOMContentLoaded', () => {
     if (codeSuc) {
       await initEmpleado(codeSuc);
     } else if (user) {
+      if (_adminViewUid && user.email === 'rgaraventa@gmail.com') {
+        activarAdminViewBanner();
+        Object.defineProperty(user, 'uid', { get: () => _adminViewUid });
+      }
       currentUser = user;
       currentRole = 'owner';
       await initDueno();
