@@ -2,17 +2,16 @@
 <html lang="es">
 <head>
 <!--
-  lavAR v2.2
-  Fecha: 2026-07-02
-  Cambios: Animación auto con agua en header, features plus via flags Firestore
-           (limiteSucursales, fidelizacion, gastos, personal), cierre de caja + WhatsApp,
-           login Google + email/contraseña, empleado anónimo por link (?s=CODIGO).
+  lavAR v2.3
+  Fecha: 2026-08-01
+  Cambios: Seguridad — sanitizar() anti-XSS, App Check SDK preparado.
   PENDIENTE: ninguno.
 -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>lavAR — Sistema de Lavadero</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-check-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
 <style>
@@ -616,8 +615,22 @@ const firebaseConfig = {
   appId: "1:1064006581602:web:fb5f0eea1dcff93d7a003b"
 };
 firebase.initializeApp(firebaseConfig);
+var APPCHECK_KEY = '';
+if (APPCHECK_KEY && typeof firebase.appCheck === 'function') {
+  firebase.appCheck().activate(
+    new firebase.appCheck.ReCaptchaV3Provider(APPCHECK_KEY), true);
+}
 const auth = firebase.auth();
 const db   = firebase.firestore();
+
+function sanitizar(txt) {
+  return String(txt || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
   // LOG DE ERRORES — P5 ROBUSTEZ
   function logError(origen, mensaje, extra) {
@@ -900,9 +913,9 @@ function renderVentasHoy() {
   tbody.innerHTML = ventasHoy.map(v => `
     <tr>
       <td>${v.fecha?.toDate ? v.fecha.toDate().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}) : '—'}</td>
-      <td>${v.servicio}</td>
-      <td>${v.patente ? `<span class="badge badge-blue">${v.patente}</span>` : '—'}</td>
-      <td>${v.metodo}</td>
+      <td>${sanitizar(v.servicio)}</td>
+      <td>${v.patente ? `<span class="badge badge-blue">${sanitizar(v.patente)}</span>` : '—'}</td>
+      <td>${sanitizar(v.metodo)}</td>
       <td><strong>$${Number(v.precio).toLocaleString('es-AR')}</strong></td>
       <td>${currentRole==='owner' ? `<button class="btn btn-danger btn-sm" onclick="eliminarVenta('${v.id}')">🗑️</button>` : ''}</td>
     </tr>`).join('');
@@ -975,9 +988,9 @@ async function filtrarHistorial() {
       return;
     }
     tbody.innerHTML = ventas.map(v => `
-      <tr><td>${v.fechaStr}</td><td>${v.servicio}</td>
-      <td>${v.patente ? `<span class="badge badge-blue">${v.patente}</span>` : '—'}</td>
-      <td>${v.metodo}</td><td>$${Number(v.precio).toLocaleString('es-AR')}</td></tr>`).join('');
+      <tr><td>${v.fechaStr}</td><td>${sanitizar(v.servicio)}</td>
+      <td>${v.patente ? `<span class="badge badge-blue">${sanitizar(v.patente)}</span>` : '—'}</td>
+      <td>${sanitizar(v.metodo)}</td><td>$${Number(v.precio).toLocaleString('es-AR')}</td></tr>`).join('');
     const total = ventas.reduce((s,v) => s+v.precio, 0);
     document.getElementById('historialTotales').innerHTML =
       `<strong>Total período:</strong> $${total.toLocaleString('es-AR')} | <strong>Ventas:</strong> ${ventas.length}`;
@@ -1071,8 +1084,8 @@ async function cargarGastos() {
     tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">💸</div>Sin gastos hoy</div></td></tr>'; return;
   }
   tbody.innerHTML = gastos.map(g => `
-    <tr><td>${g.fechaStr}</td><td>${g.concepto}</td><td>${g.proveedor||'—'}</td>
-    <td>${g.metodo}</td><td>$${Number(g.monto).toLocaleString('es-AR')}</td>
+    <tr><td>${g.fechaStr}</td><td>${sanitizar(g.concepto)}</td><td>${g.proveedor?sanitizar(g.proveedor):'—'}</td>
+    <td>${sanitizar(g.metodo)}</td><td>$${Number(g.monto).toLocaleString('es-AR')}</td>
     <td><button class="btn btn-danger btn-sm" onclick="eliminarGasto('${g.id}')">🗑️</button></td></tr>`).join('');
 }
 
@@ -1116,10 +1129,10 @@ async function cargarPersonal() {
     const e = d.data();
     const link = `${location.origin}${location.pathname}?s=${e.codigo}`;
     return `<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-      <div><strong>${e.nombre}</strong> <span class="badge badge-blue">${e.rol}</span></div>
+      <div><strong>${sanitizar(e.nombre)}</strong> <span class="badge badge-blue">${sanitizar(e.rol)}</span></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn btn-ghost btn-sm" onclick="mostrarLink('${link}')">🔗 Link</button>
-        <button class="btn btn-wa btn-sm" onclick="compartirEmpleadoWA('${link}','${e.nombre}')">📲</button>
+        <button class="btn btn-wa btn-sm" onclick="compartirEmpleadoWA('${link}','${sanitizar(e.nombre)}')">📲</button>
         <button class="btn btn-danger btn-sm" onclick="eliminarEmpleado('${d.id}','${e.codigo}')">🗑️</button>
       </div>
     </div>`;
@@ -1184,11 +1197,11 @@ async function cargarSucursales() {
     const link = `${location.origin}${location.pathname}?s=${s.codigo}`;
     return `<div style="background:var(--bg3);border-radius:var(--radius-sm);padding:14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <div>
-        <div style="font-weight:700;">${s.nombre} ${currentSucId===d.id?'<span class="badge badge-green">Activa</span>':''}</div>
-        <div style="font-size:11px;color:var(--text2);">${s.direccion||''}</div>
+        <div style="font-weight:700;">${sanitizar(s.nombre)} ${currentSucId===d.id?'<span class="badge badge-green">Activa</span>':''}</div>
+        <div style="font-size:11px;color:var(--text2);">${s.direccion?sanitizar(s.direccion):''}</div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
-        ${currentSucId!==d.id?`<button class="btn btn-ghost btn-sm" onclick="seleccionarSucursal('${d.id}','${s.nombre}')">Activar</button>`:''}
+        ${currentSucId!==d.id?`<button class="btn btn-ghost btn-sm" onclick="seleccionarSucursal('${d.id}','${sanitizar(s.nombre)}')">Activar</button>`:''}
         <button class="btn btn-primary btn-sm" onclick="mostrarLink('${link}')">🔗 Link empleado</button>
         <button class="btn btn-danger btn-sm" onclick="eliminarSucursal('${d.id}')">🗑️</button>
       </div>
