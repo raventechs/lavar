@@ -3,8 +3,8 @@
 
 const CACHE_NAME = 'lavar-v2.3';
 const SHELL = [
-  '/lavar/',
-  '/lavar/index.html',
+  '/',
+  '/index.html',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js',
   'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js',
@@ -44,7 +44,7 @@ self.addEventListener('fetch', e => {
         }
         return response;
       }).catch(() => {
-        if (e.request.mode === 'navigate') return caches.match('/lavar/index.html');
+        if (e.request.mode === 'navigate') return caches.match('/index.html');
       });
     })
   );
