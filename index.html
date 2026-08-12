@@ -1376,7 +1376,7 @@ function showToast(msg, type='info') {
 
   // SERVICE WORKER — P3 ROBUSTEZ
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/lavar/sw-lavar.js')
+    navigator.serviceWorker.register('/sw-lavar.js')
       .catch(function(e){ logError('sw', e); });
   }
 
