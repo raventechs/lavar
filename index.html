@@ -2,8 +2,11 @@
 <html lang="es">
 <head>
 <!--
-  lavAR v2.2
-  Fecha: 2026-07-02
+  lavAR v2.3
+  Fecha: 2026-10-17
+  v2.3: MODO PRÁCTICA (Config → 🎓): carga un lavadero de mentira con 4 sucursales, empleados, 14 días de ventas
+        (lavado simple $25.000), fidelización y gastos, todo marcado _demo; un botón lo quita sin tocar datos reales.
+  v2.2 (2026-07-02):
   Cambios: Animación auto con agua en header, features plus via flags Firestore
            (limiteSucursales, fidelizacion, gastos, personal), cierre de caja + WhatsApp,
            login Google + email/contraseña, empleado anónimo por link (?s=CODIGO).
@@ -543,6 +546,14 @@ var __rtPWA = (function() {
 
     <!-- CONFIG -->
     <div id="tab-config" class="section-hidden">
+      <div class="card">
+        <div class="card-title">🎓 Modo Práctica</div>
+        <p style="font-size:13px;color:var(--text2);margin-bottom:12px;">Carga un lavadero de ejemplo con 4 sucursales, empleados, ventas de los últimos 14 días, fidelización y gastos. Sirve para aprender o mostrar la app. Se puede quitar con un botón sin tocar tus datos reales.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="cargarPractica()">🎓 Cargar datos de práctica</button>
+          <button class="btn btn-danger btn-sm" onclick="quitarPractica()">🧽 Quitar datos de práctica</button>
+        </div>
+      </div>
       <div class="card">
         <div class="card-title">💾 Backup de datos</div>
         <p style="font-size:13px;color:var(--text2);margin-bottom:12px;">Genera un archivo JSON con todos tus datos. Se descarga automáticamente una vez por día al abrir la app.</p>
@@ -1147,6 +1158,82 @@ async function eliminarGasto(id) {
 //  PERSONAL
 // =============================================
 function openModalEmpleado() { openModal('modalEmpleado'); }
+
+
+// =============================================
+//  MODO PRÁCTICA (v2.3) — todo lleva _demo:true y se quita sin tocar datos reales
+// =============================================
+const PRACTICA_SUCS = [['Lavadero Centro','Av. San Martín 1200'],['Sede Norte','Ruta 8 km 22'],['Sede Sur','Calle 25 de Mayo 850'],['Sede Oeste','Av. Rivadavia 4300']];
+const PRACTICA_SERV = [['Lavado simple',25000,0.5],['Lavado completo',40000,0.22],['Lavado interior',35000,0.12],['Encerado',55000,0.1],['Detailing',120000,0.06]];
+const _rnd = (a,b) => a + Math.floor(Math.random()*(b-a+1));
+async function _commitOps(ops) {
+  for (let i=0; i<ops.length; i+=400) {
+    const b = db.batch();
+    ops.slice(i,i+400).forEach(o => o[1] === null ? b.delete(o[0]) : b.set(o[0], o[1]));
+    await b.commit();
+  }
+}
+async function cargarPractica() {
+  if (!currentUser) return;
+  if (!confirm('Se carga un lavadero de práctica: 4 sucursales, empleados, ventas de 14 días, fidelización y gastos de mentira. Se pueden quitar después. ¿Seguir?')) return;
+  try {
+    const uid = currentUser.uid;
+    const ya = await db.collection('sucursales').where('ownerUid','==',uid).where('_demo','==',true).get();
+    if (!ya.empty) { showToast('Ya hay una práctica cargada. Quitala primero.', 'danger'); return; }
+    showToast('Cargando práctica…');
+    const ops = [], hoy = new Date(), pl = ['AB','AC','AD','AE','AF','AG'];
+    const patentes = Array.from({length:40}, () => pl[_rnd(0,5)] + _rnd(100,999) + String.fromCharCode(65+_rnd(0,25)) + String.fromCharCode(65+_rnd(0,25)));
+    const emps = [['Marcela','Encargado'],['Lucas','Cajero'],['Diego','Lavador']];
+    for (let si=0; si<PRACTICA_SUCS.length; si++) {
+      const [nombre,direccion] = PRACTICA_SUCS[si], sref = db.collection('sucursales').doc(), codigo = Math.random().toString(36).substring(2,8).toUpperCase();
+      ops.push([sref, {nombre, direccion, codigo, ownerUid:uid, uid, creado:firebase.firestore.Timestamp.fromDate(hoy), _demo:true}]);
+      ops.push([db.collection('lavArLinks').doc(codigo), {sucursalId:sref.id, nombre, ownerUid:uid, _demo:true}]);
+      emps.slice(0, si===0 ? 3 : 2).forEach(([en,rol]) => {
+        const c2 = Math.random().toString(36).substring(2,8).toUpperCase();
+        ops.push([db.collection('empleados').doc(), {nombre:en, rol, codigo:c2, sucursalId:sref.id, ownerUid:uid, creado:firebase.firestore.Timestamp.fromDate(hoy), _demo:true}]);
+        ops.push([db.collection('lavArLinks').doc(c2), {sucursalId:sref.id, nombre, ownerUid:uid, _demo:true}]);
+      });
+      const fidel = {};
+      for (let d=0; d<14; d++) {
+        const dia = new Date(hoy); dia.setDate(hoy.getDate()-d);
+        const n = _rnd(10,18) + (si===0 ? 6 : 0);
+        for (let k=0; k<n; k++) {
+          let r = Math.random(), acc = 0, sv = PRACTICA_SERV[0];
+          for (const x of PRACTICA_SERV) { acc += x[2]; if (r <= acc) { sv = x; break; } }
+          const f = new Date(dia); f.setHours(_rnd(8,19), _rnd(0,59), _rnd(0,59));
+          const m = Math.random(), metodo = m<0.4 ? 'Efectivo' : (m<0.65 ? 'Transferencia' : (m<0.85 ? 'Débito' : 'QR'));
+          const pat = patentes[_rnd(0,patentes.length-1)];
+          ops.push([db.collection('ventas').doc(), {servicio:sv[0], precio:sv[1], metodo, obs:'', patente:pat, fecha:firebase.firestore.Timestamp.fromDate(f), fechaStr:f.toISOString().split('T')[0], sucursalId:sref.id, uid, _demo:true}]);
+          const fd = fidel[pat] || (fidel[pat] = {lavados:0, total:0, ult:f});
+          fd.lavados++; fd.total += sv[1]; if (f > fd.ult) fd.ult = f;
+        }
+      }
+      Object.keys(fidel).forEach(pat => ops.push([db.collection('fidelizacion').doc(sref.id+'_'+pat), {patente:pat, sucursalId:sref.id, uid, lavados:fidel[pat].lavados, totalGastado:fidel[pat].total, ultimoLavado:fidel[pat].ult, _demo:true}]));
+      [['Shampoo y cera',85000,1],['Agua y luz',60000,3],['Sueldo lavador (adelanto)',120000,4]].forEach(g => {
+        const f = new Date(hoy); f.setDate(hoy.getDate()-g[2]);
+        ops.push([db.collection('gastos').doc(), {concepto:g[0], monto:g[1], metodo:'Efectivo', proveedor:null, fecha:firebase.firestore.Timestamp.fromDate(f), fechaStr:f.toISOString().split('T')[0], sucursalId:sref.id, uid, _demo:true}]);
+      });
+    }
+    await _commitOps(ops);
+    showToast('✅ Práctica cargada: 4 sucursales. Mirá Sucursales y activá una.');
+    if (typeof cargarSucursales === 'function') cargarSucursales();
+  } catch(e) { logError('cargarPractica', e.message); showToast('Error: ' + e.message, 'danger'); }
+}
+async function quitarPractica() {
+  if (!currentUser) return;
+  if (!confirm('Se quitan SOLO los datos de práctica (sucursales, empleados, ventas, gastos y fidelización marcados). Tus datos reales no se tocan. ¿Seguir?')) return;
+  try {
+    showToast('Quitando práctica…');
+    const ops = [], uid = currentUser.uid;
+    for (const [c,campo] of [['sucursales','ownerUid'],['empleados','ownerUid'],['lavArLinks','ownerUid'],['ventas','uid'],['gastos','uid'],['fidelizacion','uid']]) {
+      const s = await db.collection(c).where(campo,'==',uid).where('_demo','==',true).get();
+      s.forEach(d => ops.push([d.ref,null]));
+    }
+    await _commitOps(ops);
+    showToast('✅ Datos de práctica quitados');
+    if (typeof cargarSucursales === 'function') cargarSucursales();
+  } catch(e) { logError('quitarPractica', e.message); showToast('Error: ' + e.message, 'danger'); }
+}
 
 async function crearEmpleado() {
   const nombre = document.getElementById('empNombre').value.trim();
