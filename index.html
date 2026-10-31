@@ -919,6 +919,35 @@ async function initEmpleado(codeSuc) {
   } catch(e) { hideLoading(); showToast('Error: ' + e.message, 'danger'); }
 }
 
+const RT_DEMO_DIAS = 14;
+function rtCartelDemo(dias) {
+  if (document.getElementById('rtDemoCartel')) return;
+  const urgente = dias <= 3;
+  const b = document.createElement('a');
+  b.id = 'rtDemoCartel';
+  b.href = 'https://wa.me/5491136547592?text=' + encodeURIComponent('Hola RavenTechs, quiero activar mi cuenta de LavAR');
+  b.target = '_blank';
+  b.textContent = '🎓 Prueba gratis: ' + (dias === 1 ? 'te queda 1 día' : 'te quedan ' + dias + ' días') + ' · Activar mi cuenta';
+  b.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 6px);left:50%;transform:translateX(-50%);z-index:9000;padding:5px 14px;border-radius:99px;font:600 12px system-ui,sans-serif;text-decoration:none;white-space:nowrap;color:#fff;background:' + (urgente ? '#dc2626' : '#1d4ed8') + ';box-shadow:0 2px 8px rgba(0,0,0,.25);' + (urgente ? 'animation:rtDemoBlink 1.2s ease-in-out infinite;' : '');
+  const st = document.createElement('style'); st.textContent = '@keyframes rtDemoBlink{50%{opacity:.55}}';
+  document.head.appendChild(st); document.body.appendChild(b);
+}
+function rtPantallaDemoVencida() {
+  document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:24px;text-align:center;font-family:system-ui,sans-serif;background:#0b0d12;color:#eef0f6;"><div style="font-size:56px;margin-bottom:12px">🔒</div><h2 style="margin-bottom:12px;">Terminó tu prueba gratis</h2><p style="color:#9aa;margin-bottom:20px;max-width:320px;line-height:1.6">Tus 14 días de prueba terminaron. Tus datos están guardados y no se perdió nada. Activá tu cuenta para seguir usando LavAR.</p><a href="https://wa.me/5491136547592?text=Hola%20RavenTechs%2C%20quiero%20activar%20mi%20cuenta%20de%20LavAR" target="_blank" style="background:#25D366;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;">Activar mi cuenta por WhatsApp</a></div>';
+}
+// Admin: pasar a cliente real o dar 7 días más
+async function rtPasarACliente(uid) {
+  if (!confirm('¿Pasar esta cuenta a cliente real? Se quita el vencimiento de la prueba.')) return;
+  try { await db.collection('config').doc(uid).set({ demoHasta: null }, { merge: true }); rtCargarClientes(); } catch(e) { alert('Error: ' + e.message); }
+}
+async function rtExtenderDemo(uid, dias) {
+  try {
+    const sn = await db.collection('config').doc(uid).get(); const d = sn.data() || {};
+    const base = Math.max(Date.now(), (d.demoHasta && d.demoHasta.toMillis) ? d.demoHasta.toMillis() : Date.now());
+    await db.collection('config').doc(uid).set({ demoHasta: firebase.firestore.Timestamp.fromMillis(base + dias * 86400000), activo: true }, { merge: true });
+    rtCargarClientes();
+  } catch(e) { alert('Error: ' + e.message); }
+}
 async function initDueno() {
   try {
     const cfg = await db.collection('config').doc(currentUser.uid).get();
@@ -934,9 +963,23 @@ async function initDueno() {
         document.body.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:24px;text-align:center;font-family:system-ui,sans-serif;background:#0b0d12;color:#eef0f6;"><h2 style="margin-bottom:12px;">Cuenta inactiva</h2><p style="color:#9aa;margin-bottom:20px;">Contactanos para reactivar tu cuenta.</p><a href="https://wa.me/5491136547592?text=Hola%2C%20necesito%20reactivar%20mi%20cuenta%20de%20LavAR" target="_blank" style="background:#25D366;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;">Escribir por WhatsApp</a></div>';
         return;
       }
+      // Prueba gratis de 14 días: demoHasta = fin; null = cliente real (lo pasa el admin); sin campo = cuenta anterior, la prueba arranca hoy
+      if (!(window.rtIsAdmin && window.rtIsAdmin())) {
+        let demoMs = (d.demoHasta === undefined) ? undefined : (d.demoHasta === null ? null : (d.demoHasta.toMillis ? d.demoHasta.toMillis() : null));
+        if (demoMs === undefined) {
+          const hasta = firebase.firestore.Timestamp.fromMillis(Date.now() + RT_DEMO_DIAS * 86400000);
+          try { await db.collection('config').doc(currentUser.uid).set({ demoHasta: hasta }, { merge: true }); demoMs = hasta.toMillis(); } catch(_) { demoMs = null; }
+        }
+        if (demoMs) {
+          const dias = Math.ceil((demoMs - Date.now()) / 86400000);
+          if (dias <= 0) { hideLoading(); rtPantallaDemoVencida(); return; }
+          rtCartelDemo(dias);
+        }
+      }
     } else {
-      // RavenTechs: backfill de email para el panel admin (no afecta nada existente)
-      db.collection('config').doc(currentUser.uid).set({ email: currentUser.email, activo: true, creadoEn: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(()=>{});
+      // RavenTechs: backfill de email para el panel admin (no afecta nada existente) + prueba gratis de 14 días
+      db.collection('config').doc(currentUser.uid).set({ email: currentUser.email, activo: true, demoHasta: firebase.firestore.Timestamp.fromMillis(Date.now() + RT_DEMO_DIAS * 86400000), creadoEn: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(()=>{});
+      if (!(window.rtIsAdmin && window.rtIsAdmin())) rtCartelDemo(RT_DEMO_DIAS);
     }
     if (cfg.exists && !cfg.data().email) {
       db.collection('config').doc(currentUser.uid).set({ email: currentUser.email }, { merge: true }).catch(()=>{});
@@ -1887,7 +1930,7 @@ async function rtCargarClientes() {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
           <div>
             <div style="font-size:13px;font-weight:700;">${cl.email || cl.id}</div>
-            <div style="font-size:11px;color:#9aa;">${limiteSuc} sucursal(es)</div>
+            <div style="font-size:11px;color:#9aa;">${limiteSuc} sucursal(es) · ${cl.demoHasta === null ? 'Cliente real' : (cl.demoHasta && cl.demoHasta.toMillis ? (Math.ceil((cl.demoHasta.toMillis() - Date.now()) / 86400000) > 0 ? 'Prueba: ' + Math.ceil((cl.demoHasta.toMillis() - Date.now()) / 86400000) + ' días' : 'Prueba vencida') : 'Sin prueba')}</div>
           </div>
           ${badge}
         </div>
@@ -1897,6 +1940,8 @@ async function rtCargarClientes() {
             <option value="3" ${limiteSuc==3?'selected':''}>3 sucursales</option>
             <option value="99" ${limiteSuc==99?'selected':''}>Ilimitado</option>
           </select>
+          <button onclick="rtPasarACliente('${cl.id}')" style="font-size:11px;padding:6px 10px;border-radius:6px;cursor:pointer;background:rgba(39,174,96,.15);color:#27ae60;border:1px solid rgba(39,174,96,.3);">✅ Pasar a cliente</button>
+          <button onclick="rtExtenderDemo('${cl.id}', 7)" style="font-size:11px;padding:6px 10px;border-radius:6px;cursor:pointer;background:rgba(37,99,235,.15);color:#60a5fa;border:1px solid rgba(37,99,235,.3);">+7 días</button>
           <button onclick="rtToggleActivo('${cl.id}', ${activo})" style="font-size:11px;padding:6px 10px;border-radius:6px;cursor:pointer;${activo?'background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3);':'background:rgba(39,174,96,.15);color:#27ae60;border:1px solid rgba(39,174,96,.3);'}">${activo?'🚫 Desactivar':'✅ Activar'}</button>
         </div>
       </div>`;
@@ -1919,7 +1964,7 @@ async function rtCambiarLimiteSuc(uid, valor) {
   } catch(e) { alert('Error: ' + e.message); }
 }
 
-window.rtToggleActivo = rtToggleActivo;
+window.rtToggleActivo = rtToggleActivo; window.rtPasarACliente = rtPasarACliente; window.rtExtenderDemo = rtExtenderDemo;
 window.rtCambiarLimiteSuc = rtCambiarLimiteSuc;
 
 (function rtCheckAdminShortcut() {
