@@ -904,6 +904,11 @@ async function initEmpleado(codeSuc) {
     currentSucId = d.sucursalId; currentSucNombre = d.nombre;
     await auth.signInAnonymously();
     currentUser = auth.currentUser; currentRole = 'employee';
+    // Registra a este cajero como miembro de SU sucursal (las reglas solo dejan operar a los registrados con un código válido)
+    try {
+      await db.collection('sucursales').doc(currentSucId).collection('cajeros').doc(currentUser.uid)
+        .set({ codigo: codeSuc, ultimoAcceso: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    } catch(e) { console.warn('cajero', e); }
     hideLoading(); initUI(); initOffline(); chequearBackupDiario();
   } catch(e) { hideLoading(); showToast('Error: ' + e.message, 'danger'); }
 }
@@ -1333,9 +1338,17 @@ async function quitarPractica() {
   try {
     showToast('Quitando práctica…');
     const ops = [], uid = currentUser.uid;
-    for (const [c,campo] of [['sucursales','ownerUid'],['empleados','ownerUid'],['lavArLinks','ownerUid'],['ventas','uid'],['gastos','uid'],['fidelizacion','uid']]) {
+    const demoSucIds = [];
+    for (const [c,campo] of [['sucursales','ownerUid'],['empleados','ownerUid'],['lavArLinks','ownerUid']]) {
       const s = await db.collection(c).where(campo,'==',uid).where('_demo','==',true).get();
-      s.forEach(d => ops.push([d.ref,null]));
+      s.forEach(d => { ops.push([d.ref,null]); if (c === 'sucursales') demoSucIds.push(d.id); });
+    }
+    // Ventas, gastos y fidelización se buscan por sucursal (así lo exigen las reglas de seguridad)
+    for (const sid of demoSucIds) {
+      for (const c of ['ventas','gastos','fidelizacion']) {
+        const s = await db.collection(c).where('sucursalId','==',sid).where('_demo','==',true).get();
+        s.forEach(d => ops.push([d.ref,null]));
+      }
     }
     await _commitOps(ops);
     showToast('✅ Datos de práctica quitados');
