@@ -872,7 +872,13 @@ window.addEventListener('DOMContentLoaded', () => {
     authInitialized = true;
 
     const params = new URLSearchParams(window.location.search);
-    const codeSuc = params.get('s');
+    // El código se recuerda en el dispositivo (la app instalada abre sin ?s=)
+    let codeSuc = params.get('s');
+    try {
+      if (codeSuc) localStorage.setItem('lavar_cod_cajero', codeSuc);
+      else if (user && !user.isAnonymous) localStorage.removeItem('lavar_cod_cajero');   // dueño iniciando sesión: este dispositivo deja de ser caja
+      else if (user) codeSuc = localStorage.getItem('lavar_cod_cajero');                  // cajero anónimo que abre la app instalada sin ?s=
+    } catch(_) {}
 
     if (codeSuc) {
       await initEmpleado(codeSuc);
@@ -899,7 +905,7 @@ window.addEventListener('DOMContentLoaded', () => {
 async function initEmpleado(codeSuc) {
   try {
     const snap = await db.collection('lavArLinks').doc(codeSuc).get();
-    if (!snap.exists) { hideLoading(); showToast('Código inválido', 'danger'); return; }
+    if (!snap.exists) { try { localStorage.removeItem('lavar_cod_cajero'); } catch(_) {} hideLoading(); showToast('Código inválido', 'danger'); return; }
     const d = snap.data();
     currentSucId = d.sucursalId; currentSucNombre = d.nombre;
     await auth.signInAnonymously();
