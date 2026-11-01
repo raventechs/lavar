@@ -808,7 +808,7 @@ let currentUser      = null;
 let currentRole      = 'owner';
 let currentSucId     = null;
 let currentSucNombre = '';
-let adminPin         = '2580';
+let adminPin         = null; // ya no hay PIN: el panel abre solo con la cuenta admin
 let umbralFidel      = 10;
 let limiteSucursales = 1;
 let features         = { fidelizacion: false, gastos: false, personal: false };
@@ -954,7 +954,7 @@ async function initDueno() {
     const cfg = await db.collection('config').doc(currentUser.uid).get();
     if (cfg.exists) {
       const d = cfg.data();
-      adminPin         = d.pin             || '1990';
+      adminPin         = null;
       umbralFidel      = d.umbral          || 10;
       limiteSucursales = d.limiteSucursales|| 1;
       features         = d.features        || { fidelizacion:false, gastos:false, personal:false };
@@ -1564,7 +1564,7 @@ function adminTap() {
   tapCount++;
   clearTimeout(tapTimer);
   tapTimer = setTimeout(() => tapCount = 0, 1800);
-  if (tapCount >= 5) { tapCount = 0; openModal('pinModal'); }
+  if (tapCount >= 5) { tapCount = 0; if (window.rtIsAdmin && window.rtIsAdmin()) abrirAdminLavar(); }
 }
 
 function buildPinGrid() {
@@ -1584,8 +1584,17 @@ function pinKey(k) {
   document.getElementById('pinDisplay').textContent = '●'.repeat(pinBuffer.length).padEnd(4,'_');
 }
 
+function abrirAdminLavar() {
+  document.getElementById('adminUserEmail').textContent  = currentUser?.email || '—';
+  document.getElementById('adminLimiteSuc').value        = limiteSucursales;
+  document.getElementById('flagFidelizacion').checked    = features.fidelizacion;
+  document.getElementById('flagGastos').checked          = features.gastos;
+  document.getElementById('flagPersonal').checked        = features.personal;
+  document.getElementById('adminPinNew').value           = '';
+  openModal('adminModal');
+}
 function verificarPin() {
-  if (pinBuffer === adminPin) {
+  if (adminPin !== null && pinBuffer === adminPin) {
     closeModal('pinModal'); resetPin();
     // Precargar valores actuales en el modal admin
     document.getElementById('adminUserEmail').textContent  = currentUser?.email || '—';
