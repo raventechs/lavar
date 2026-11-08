@@ -1,7 +1,7 @@
 // sw-lavar.js — Service Worker lavAR v2.3
 // P3 ROBUSTEZ: cache-first para shell, offline completo
 
-const CACHE_NAME = 'lavar-v2.3';
+const CACHE_NAME = 'lavar-v2.5';
 const SHELL = [
   '/',
   '/index.html',

@@ -2,7 +2,8 @@
 <html lang="es">
 <head>
 <!--
-  lavAR v2.4
+  lavAR v2.5
+  v2.5 (8/11/2026): TARJETA «TUS PRIMEROS PASOS» en Caja, solo para el dueño y durante la prueba gratis: 4 pasos (primer lavado, Historial, Ver resumen del día, nombre del negocio) que se tildan solos; se puede ocultar. Se guarda en el celular, no toca datos ni reglas.
   Fecha: 2026-10-26
   v2.4: BACKUP ARREGLADO: el automático nunca corría para el dueño y el archivo salía sin sucursales ni fidelización (buscaba por un campo que no existe).
         Ahora baja el archivo solo una vez por día + copia local (últimas 7), incluye gastos y empleados, restaura fechas a su tipo y no pisa PIN ni plan.
@@ -285,6 +286,16 @@ button[class*="metodo"]:active, button[class*="pago"]:active {
 }
 /* ──────────────────────────────────────────────────── */
 
+  /* Tus primeros pasos (solo durante la prueba gratis) */
+  .rt-chk{background:var(--bg2);border:2px solid #2563eb;border-radius:16px;padding:12px 14px;margin:0 0 12px;box-shadow:0 4px 16px rgba(37,99,235,.30)}
+  .rt-chk .tt{display:flex;justify-content:space-between;align-items:center;font-weight:800;font-size:0.95rem;margin-bottom:6px;color:var(--text)}
+  .rt-chk .tt button{background:none;border:none;color:var(--text2);font-size:12px;text-decoration:underline;cursor:pointer;padding:4px}
+  .rt-chk .barra{height:6px;border-radius:99px;background:rgba(128,128,128,.25);margin:2px 0 8px;overflow:hidden}
+  .rt-chk .barra i{display:block;height:100%;background:#27ae60;border-radius:99px;transition:width .3s}
+  .rt-chk .paso{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--border);padding:10px 2px;font-size:0.9rem;color:var(--text);cursor:pointer;font-family:inherit}
+  .rt-chk .paso .ck{flex-shrink:0;width:24px;height:24px;border-radius:50%;border:2px solid #9aa4b2;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff}
+  .rt-chk .paso.ok{opacity:.65;text-decoration:line-through;cursor:default}
+  .rt-chk .paso.ok .ck{background:#27ae60;border-color:#27ae60}
 </style>
 <script>
 // RavenTechs PWA Banner v1.1 — en el HEAD para capturar beforeinstallprompt temprano
@@ -500,6 +511,7 @@ var __rtPWA = (function() {
 
     <!-- CAJA -->
     <div id="tab-caja">
+      <div id="rtChecklist"></div>
       <div class="card">
         <div class="card-title">🚗 Nueva venta</div>
         <div class="form-row">
@@ -921,7 +933,37 @@ async function initEmpleado(codeSuc) {
 }
 
 const RT_DEMO_DIAS = 14;
+/* ── Tus primeros pasos: 4 pasos que se tildan solos, solo durante la prueba gratis y solo para el dueño. Se guarda en este celular; no toca datos. ── */
+var rtEnPrueba = false;
+function rtChkClave() { return 'rt_chk_' + ((currentUser && currentUser.uid) || 'x'); }
+function rtChkLeer() { try { return JSON.parse(localStorage.getItem(rtChkClave()) || '{}') || {}; } catch (_) { return {}; } }
+function rtChkGuardar(o) { try { localStorage.setItem(rtChkClave(), JSON.stringify(o)); } catch (_) {} }
+function rtChkVisible() {
+  if (!currentUser || currentRole !== 'owner') return false;
+  if (rtChkLeer().fin) return false;
+  return rtEnPrueba || !!(window.rtIsAdmin && window.rtIsAdmin());
+}
+var RT_PASOS = [
+  { k: 'venta',  t: 'Registrá tu primer lavado en «Caja»',       ir: function () { switchTab('caja'); } },
+  { k: 'hist',   t: 'Mirá tus ventas en «Historial»',            ir: function () { switchTab('historial'); } },
+  { k: 'cierre', t: 'Probá «Ver resumen» del día en «Caja»',        ir: function () { switchTab('caja'); } },
+  { k: 'config', t: 'Poné el nombre de tu negocio en «Config»',  ir: function () { switchTab('config'); } }
+];
+function rtChkMarcar(k) { try { if (!rtChkVisible()) return; var o = rtChkLeer(); if (o[k]) return; o[k] = 1; rtChkGuardar(o); rtChkPintar(); } catch (_) {} }
+function rtChkPintar() {
+  var box = document.getElementById('rtChecklist'); if (!box) return;
+  try {
+    if (!rtChkVisible()) { box.innerHTML = ''; return; }
+    var o = rtChkLeer(), hechos = RT_PASOS.filter(function (p) { return o[p.k]; }).length;
+    if (hechos === RT_PASOS.length) { o.fin = 1; rtChkGuardar(o); box.innerHTML = ''; showToast('🎉 ¡Listo! Ya sabés lo básico de lavAR'); return; }
+    box.innerHTML = '<div class="rt-chk"><div class="tt"><span>🚀 Tus primeros pasos (' + hechos + ' de ' + RT_PASOS.length + ')</span><button type="button" onclick="rtChkOcultar()">Ocultar</button></div><div class="barra"><i style="width:' + Math.round(hechos * 100 / RT_PASOS.length) + '%"></i></div>'
+      + RT_PASOS.map(function (p, i) { return '<button type="button" class="paso' + (o[p.k] ? ' ok' : '') + '" onclick="rtChkIr(' + i + ')"><span class="ck">' + (o[p.k] ? '✓' : '') + '</span><span>' + p.t + '</span></button>'; }).join('') + '</div>';
+  } catch (_) { box.innerHTML = ''; }
+}
+function rtChkIr(i) { var p = RT_PASOS[i]; if (p && !rtChkLeer()[p.k]) p.ir(); }
+function rtChkOcultar() { var o = rtChkLeer(); o.fin = 1; rtChkGuardar(o); var b = document.getElementById('rtChecklist'); if (b) b.innerHTML = ''; }
 function rtCartelDemo(dias) {
+  rtEnPrueba = true; rtChkPintar();
   if (document.getElementById('rtDemoCartel')) return;
   const urgente = dias <= 3;
   const b = document.createElement('a');
@@ -1067,7 +1109,8 @@ function switchTab(name) {
     const el = document.getElementById('tab-' + t);
     if (el) el.classList.toggle('section-hidden', t !== name);
   });
-  if (name === 'historial') cargarHistorialHoy();
+  if (name === 'historial') { cargarHistorialHoy(); rtChkMarcar('hist'); }
+  if (name === 'caja') rtChkPintar();
   if (name === 'config') cargarConfig();
   if (name === 'sucursales') cargarSucursales();
   if (name === 'gastos') cargarGastos();
@@ -1095,7 +1138,7 @@ async function registrarVenta() {
     try {
       await idbAdd('ventas_pendientes', venta);
       actualizarBadge();
-      showToast('📴 Venta guardada offline — se sincronizará al reconectar');
+      showToast('📴 Venta guardada offline — se sincronizará al reconectar'); rtChkMarcar('venta');
       document.getElementById('vPatente').value = '';
       document.getElementById('vPrecio').value  = '';
       document.getElementById('vObs').value     = '';
@@ -1105,7 +1148,7 @@ async function registrarVenta() {
   try {
     await db.collection('ventas').add(venta);
     if (patente && features.fidelizacion) await actualizarFidel(patente, precio);
-    showToast('✅ Venta registrada');
+    showToast('✅ Venta registrada'); rtChkMarcar('venta');
     document.getElementById('vPatente').value = '';
     document.getElementById('vPrecio').value  = '';
     document.getElementById('vObs').value     = '';
@@ -1173,12 +1216,12 @@ function generarResumen() {
 
 function cerrarCaja() {
   if (!ventasHoy.length) { showToast('No hay ventas hoy', 'danger'); return; }
-  alert(generarResumen().replace(/\*/g,''));
+  alert(generarResumen().replace(/\*/g,'')); rtChkMarcar('cierre');
 }
 
 function enviarResumenWA() {
   if (!ventasHoy.length) { showToast('No hay ventas hoy', 'danger'); return; }
-  window.open('https://wa.me/?text=' + encodeURIComponent(generarResumen()), '_blank');
+  window.open('https://wa.me/?text=' + encodeURIComponent(generarResumen()), '_blank'); rtChkMarcar('cierre');
 }
 
 // =============================================
@@ -1554,7 +1597,7 @@ async function guardarConfig() {
   const umbral = parseInt(document.getElementById('cfgUmbral').value)||10;
   const nombre = document.getElementById('cfgNombre').value.trim();
   await db.collection('config').doc(currentUser.uid).set({umbral,nombre},{merge:true});
-  umbralFidel = umbral; showToast('✅ Configuración guardada');
+  umbralFidel = umbral; showToast('✅ Configuración guardada'); if (nombre) rtChkMarcar('config');
 }
 
 // =============================================
