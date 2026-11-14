@@ -501,6 +501,7 @@ var __rtPWA = (function() {
     <div class="nav-tab active" data-tab="caja" onclick="switchTab('caja')">💳 Caja</div>
     <div class="nav-tab" data-tab="historial" onclick="switchTab('historial')">📋 Historial</div>
     <div class="nav-tab owner-only section-hidden" data-tab="sucursales" onclick="switchTab('sucursales')">🏪 Sucursales</div>
+    <div class="nav-tab owner-only section-hidden" data-tab="dueno" id="lvTabDueno" style="display:none" onclick="switchTab('dueno')">🔒 Dueño</div>
     <div class="nav-tab plus-tab section-hidden" data-tab="fidelizacion" onclick="switchTab('fidelizacion')">⭐ Fidelización</div>
     <div class="nav-tab plus-tab section-hidden" data-tab="gastos" onclick="switchTab('gastos')">💸 Gastos</div>
     <div class="nav-tab plus-tab section-hidden" data-tab="personal" onclick="switchTab('personal')">👷 Personal</div>
@@ -610,6 +611,8 @@ var __rtPWA = (function() {
         <div id="sucursalesList"><div class="empty"><div class="empty-icon">🏪</div>Sin sucursales aún</div></div>
       </div>
     </div>
+
+    <div id="tab-dueno" class="section-hidden"><div class="card" id="lvDuenoBody"></div></div>
 
     <!-- FIDELIZACIÓN (plus) -->
     <div id="tab-fidelizacion" class="section-hidden">
@@ -827,6 +830,7 @@ let currentSucNombre = '';
 let adminPin         = null; // ya no hay PIN: el panel abre solo con la cuenta admin
 let umbralFidel      = 10;
 let limiteSucursales = 1;
+let panelDueno = false, lvSucs = [];   // v2.5: Plus «Panel del dueño» (config/{uid}.panelDueno, lo activa el admin)
 let features         = { fidelizacion: false, gastos: false, personal: false };
 let tapCount         = 0;
 let tapTimer         = null;
@@ -1003,6 +1007,7 @@ async function initDueno() {
       adminPin         = null;
       umbralFidel      = d.umbral          || 10;
       limiteSucursales = d.limiteSucursales|| 1;
+      panelDueno       = !!d.panelDueno;
       features         = d.features        || { fidelizacion:false, gastos:false, personal:false };
       // RavenTechs: cuenta suspendida por admin (agregado, no afecta cuentas existentes)
       if (d.activo === false) {
@@ -1109,7 +1114,7 @@ function doLogout() { auth.signOut().then(() => location.reload()); }
 // =============================================
 function switchTab(name) {
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  ['caja','historial','sucursales','fidelizacion','gastos','personal','config'].forEach(t => {
+  ['caja','historial','sucursales','dueno','fidelizacion','gastos','personal','config'].forEach(t => {
     const el = document.getElementById('tab-' + t);
     if (el) el.classList.toggle('section-hidden', t !== name);
   });
@@ -1117,6 +1122,7 @@ function switchTab(name) {
   if (name === 'caja') rtChkPintar();
   if (name === 'config') cargarConfig();
   if (name === 'sucursales') cargarSucursales();
+  if (name === 'dueno') lvRenderDueno();
   if (name === 'gastos') cargarGastos();
   if (name === 'personal') cargarPersonal();
 }
@@ -1542,6 +1548,8 @@ async function cargarSucursales() {
   if (currentRole !== 'owner') return;
   const snap = await db.collection('sucursales').where('ownerUid','==',currentUser.uid).get();
   const cont = document.getElementById('sucursalesList');
+  lvSucs = snap.docs.map(d => ({ id: d.id, nombre: d.data().nombre || 'Sucursal' }));
+  lvPintarMulti();
   if (snap.empty) {
     cont.innerHTML = '<div class="empty"><div class="empty-icon">🏪</div>Sin sucursales. Creá la primera.</div>'; return;
   }
@@ -1562,10 +1570,71 @@ async function cargarSucursales() {
   }).join('');
 }
 
+// ── v2.5: varios locales ──────────────────────────────────────
+function lvMulti() { return currentRole === 'owner' && (limiteSucursales > 1 || lvSucs.length > 1); }
+function lvPlus() { return panelDueno || (currentUser && rtEsAdmin(currentUser.email)); }
+function lvPintarMulti() {
+  try {
+    const tb = document.getElementById('lvTabDueno');
+    if (tb) { tb.style.display = lvMulti() ? '' : 'none'; tb.textContent = lvPlus() ? '📊 Dueño' : '🔒 Dueño'; }
+    const caja = document.getElementById('tab-caja'); if (!caja) return;
+    let bar = document.getElementById('lvLocalBar');
+    if (!lvMulti() || lvSucs.length < 2) { if (bar) bar.remove(); return; }
+    if (!bar) { bar = document.createElement('div'); bar.id = 'lvLocalBar'; bar.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 10px'; caja.insertBefore(bar, caja.firstChild); }
+    bar.textContent = '';
+    const l0 = document.createElement('span'); l0.style.cssText = 'font-size:12px;color:var(--text2)'; l0.textContent = 'Local:'; bar.appendChild(l0);
+    lvSucs.forEach(x => {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = x.nombre;
+      b.style.cssText = 'font-size:12px;font-weight:700;padding:6px 12px;border-radius:14px;cursor:pointer;border:1px solid var(--accent,#2563eb);' + (x.id === currentSucId ? 'background:var(--accent,#2563eb);color:#fff;' : 'background:transparent;color:var(--accent,#2563eb);');
+      b.onclick = () => { seleccionarSucursal(x.id, x.nombre); };
+      bar.appendChild(b);
+    });
+  } catch (_) {}
+}
+async function lvRenderDueno() {
+  const box = document.getElementById('lvDuenoBody'); if (!box) return;
+  if (!lvPlus()) {
+    const wa = 'https://wa.me/5491136547592?text=' + encodeURIComponent('Hola RavenTechs, quiero el Plus Panel del dueño de lavAR');
+    box.innerHTML = '<div style="text-align:center;padding:20px 10px"><div style="font-size:46px">🔒</div><h2 style="margin:8px 0 6px">Panel del dueño <span style="font-size:.6em">⭐ Plus</span></h2>' +
+      '<p style="color:var(--text2);font-size:.9rem;line-height:1.5;max-width:320px;margin:0 auto 16px">Mirá todos tus locales juntos: cuánto vendió cada uno hoy, el total general y entrá al detalle de cada sucursal sin salir de tu cuenta.</p>' +
+      '<a href="' + wa + '" target="_blank" rel="noopener" style="display:inline-block;background:#25D366;color:#fff;padding:12px 20px;border-radius:12px;font-weight:700;text-decoration:none">📲 Quiero activarlo</a></div>';
+    return;
+  }
+  box.textContent = 'Cargando…';
+  const hoy = new Date().toISOString().split('T')[0];
+  const rs = await Promise.all(lvSucs.map(async x => {
+    try {
+      const sn = await db.collection('ventas').where('sucursalId', '==', x.id).where('fechaStr', '==', hoy).get();
+      let t = 0; sn.docs.forEach(d => { t += Number(d.data().precio) || 0; });
+      return { x, n: sn.size, t };
+    } catch (e) { return { x, n: 0, t: 0, err: 1 }; }
+  }));
+  const tot = rs.reduce((a, r) => a + r.t, 0), cant = rs.reduce((a, r) => a + r.n, 0);
+  const money = v => '$' + Math.round(v).toLocaleString('es-AR');
+  box.textContent = '';
+  const h = document.createElement('div'); h.style.cssText = 'text-align:center;margin-bottom:12px';
+  h.innerHTML = '<div style="font-size:12px;color:var(--text2)">Ventas de hoy · todos los locales</div><div style="font-size:30px;font-weight:800">' + money(tot) + '</div><div style="font-size:12px;color:var(--text2)">' + cant + ' venta' + (cant === 1 ? '' : 's') + '</div>';
+  box.appendChild(h);
+  rs.forEach(r => {
+    const c = document.createElement('div'); c.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--bg3);border-radius:var(--radius-sm);padding:12px;margin-bottom:8px';
+    const l = document.createElement('div'); const nm = document.createElement('div'); nm.style.fontWeight = '700'; nm.textContent = '🏪 ' + r.x.nombre;
+    const sb = document.createElement('div'); sb.style.cssText = 'font-size:12px;color:var(--text2)'; sb.textContent = r.err ? 'No se pudo leer' : (r.n + ' venta' + (r.n === 1 ? '' : 's') + ' · ' + money(r.t));
+    l.appendChild(nm); l.appendChild(sb); c.appendChild(l);
+    const b = document.createElement('button'); b.className = 'btn btn-ghost btn-sm'; b.textContent = r.x.id === currentSucId ? 'Ver historial' : 'Ver detalle';
+    b.onclick = () => { if (r.x.id !== currentSucId) seleccionarSucursal(r.x.id, r.x.nombre); switchTab('historial'); };
+    c.appendChild(b); box.appendChild(c);
+  });
+}
+async function rtTogglePanelDueno(uid, on) {
+  try { await db.collection('config').doc(uid).set({ panelDueno: !!on }, { merge: true }); rtCargarClientes(); }
+  catch (e) { alert('Error: ' + e.message); }
+}
+window.rtTogglePanelDueno = rtTogglePanelDueno;
+
 function seleccionarSucursal(id, nombre) {
   currentSucId = id; currentSucNombre = nombre;
   document.getElementById('headerSucursal').textContent = nombre;
-  showToast(`Sucursal activa: ${nombre}`); cargarSucursales(); cargarVentasHoy();
+  showToast(`Sucursal activa: ${nombre}`); cargarSucursales(); cargarVentasHoy(); lvPintarMulti();
 }
 
 async function eliminarSucursal(id) {
@@ -1999,6 +2068,7 @@ async function rtCargarClientes() {
             <option value="3" ${limiteSuc==3?'selected':''}>3 sucursales</option>
             <option value="99" ${limiteSuc==99?'selected':''}>Ilimitado</option>
           </select>
+          <button onclick="rtTogglePanelDueno('${cl.id}', ${!cl.panelDueno})" style="font-size:11px;padding:6px 10px;border-radius:6px;cursor:pointer;background:rgba(245,158,11,.15);color:#f59e0b;border:1px solid rgba(245,158,11,.4);">${cl.panelDueno ? '⭐ Panel dueño: ACTIVO (quitar)' : '⭐ Activar Panel dueño'}</button>
           <button onclick="rtPasarACliente('${cl.id}')" style="font-size:11px;padding:6px 10px;border-radius:6px;cursor:pointer;background:rgba(39,174,96,.15);color:#27ae60;border:1px solid rgba(39,174,96,.3);">✅ Pasar a cliente</button>
           <button onclick="rtExtenderDemo('${cl.id}', 7)" style="font-size:11px;padding:6px 10px;border-radius:6px;cursor:pointer;background:rgba(37,99,235,.15);color:#60a5fa;border:1px solid rgba(37,99,235,.3);">+7 días</button>
           <button onclick="rtExtenderDemo('${cl.id}', 30)" style="font-size:11px;padding:6px 10px;border-radius:6px;cursor:pointer;background:rgba(37,99,235,.15);color:#60a5fa;border:1px solid rgba(37,99,235,.3);">+30 días</button>
